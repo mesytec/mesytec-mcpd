@@ -236,7 +236,7 @@ class MainWindow(QtWidgets.QMainWindow):
         menu_file.addAction("&Save Setup", self._save_setup, QtGui.QKeySequence.StandardKey.Save)
         menu_file.addAction("Save Setup &As...", self._save_setup_as)
         menu_file.addSeparator()
-        menu_file.addAction("E&xit", self.close, QtGui.QKeySequence.StandardKey.Quit)
+        menu_file.addAction("E&xit", self.close, QtGui.QKeySequence("Ctrl+Q"))
         menu_view = self.menuBar().addMenu("&View")
         menu_view.addAction("New &Histogram View", lambda: self._add_histo_view())
         menu_view.addSeparator()
