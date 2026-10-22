@@ -16,7 +16,7 @@ jobs:
       matrix:
         os: [ubuntu-22.04, windows-2022, macos-13]
     env:
-      CIBW_BUILD: "cp312-* cp313-*"
+      CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-*"
       CIBW_SKIP: "*-musllinux_*"
       CIBW_ARCHS_LINUX: x86_64
       CIBW_ARCHS_WINDOWS: AMD64

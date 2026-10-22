@@ -26,6 +26,16 @@ struct Counters
 
 const size_t DefaultQueueSize = 1000;
 
+// queue.Queue and queue.ShutDown on python >= 3.13. On older versions a
+// queue.Queue subclass backporting shutdown() and its ShutDown exception.
+struct QueueTypes
+{
+    py::object queue;
+    py::object shutDown;
+};
+
+const QueueTypes &queueTypes();
+
 struct AugmentedDataPacket
 {
     DataPacket packet;

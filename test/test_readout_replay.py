@@ -1,6 +1,5 @@
 """Tests for the queue based python Readout/Replay classes."""
 
-import queue
 import threading
 import time
 
@@ -37,7 +36,7 @@ def test_readout_queue_and_counters():
 
     assert rdo.stop()
     assert not rdo.is_running()
-    with pytest.raises(queue.ShutDown):
+    with pytest.raises(mcpd.QueueShutDown):
         rdo.get_queue().get(timeout=0.1)
 
 
@@ -84,7 +83,7 @@ def test_replay_backpressure(tmp_path):
     while True:
         try:
             got.append(q.get(timeout=2))
-        except queue.ShutDown:
+        except mcpd.QueueShutDown:
             break
     assert [p.packet.buffer_number for p in got] == list(range(50))
     assert not rp.is_running()

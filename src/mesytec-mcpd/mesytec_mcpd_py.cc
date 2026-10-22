@@ -38,6 +38,11 @@ void init_py_module(py::module_ &m)
     m.doc() = "driver library for the mesytec PSD system (MCPD, MPSD, MDLL) - python bindings";
     m.attr("__version__") = library_version();
 
+    // The queue type used by Readout/Replay and the exception raised by
+    // get()/put() after shutdown(). Stdlib versions on python >= 3.13.
+    m.attr("Queue") = queueTypes().queue;
+    m.attr("QueueShutDown") = queueTypes().shutDown;
+
     m.def("init", []() { init_logging(); });
     m.def(
         "set_log_level",

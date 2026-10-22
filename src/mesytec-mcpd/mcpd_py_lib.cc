@@ -1,6 +1,8 @@
 #include "mcpd_py_lib.h"
 
 #include <optional>
+#include <pybind11/eval.h>
+#include <pybind11/gil_safe_call_once.h>
 
 #include <mesytec-mcpd/util/logging.h>
 
@@ -24,7 +26,112 @@ struct ReleaseGilIfHeld
             release.emplace();
     }
 };
+
+// put(), get() and shutdown() as implemented in python 3.13.
+const char *QueueBackportSource = R"(
+import queue
+from time import monotonic as time
+
+
+class ShutDown(Exception):
+    """Raised when put/get with shut-down queue."""
+
+
+class Queue(queue.Queue):
+    def __init__(self, maxsize=0):
+        super().__init__(maxsize)
+        self.is_shutdown = False
+
+    def put(self, item, block=True, timeout=None):
+        with self.not_full:
+            if self.is_shutdown:
+                raise ShutDown
+            if self.maxsize > 0:
+                if not block:
+                    if self._qsize() >= self.maxsize:
+                        raise queue.Full
+                elif timeout is None:
+                    while self._qsize() >= self.maxsize:
+                        self.not_full.wait()
+                        if self.is_shutdown:
+                            raise ShutDown
+                elif timeout < 0:
+                    raise ValueError("'timeout' must be a non-negative number")
+                else:
+                    endtime = time() + timeout
+                    while self._qsize() >= self.maxsize:
+                        remaining = endtime - time()
+                        if remaining <= 0.0:
+                            raise queue.Full
+                        self.not_full.wait(remaining)
+                        if self.is_shutdown:
+                            raise ShutDown
+            self._put(item)
+            self.unfinished_tasks += 1
+            self.not_empty.notify()
+
+    def get(self, block=True, timeout=None):
+        with self.not_empty:
+            if self.is_shutdown and not self._qsize():
+                raise ShutDown
+            if not block:
+                if not self._qsize():
+                    raise queue.Empty
+            elif timeout is None:
+                while not self._qsize():
+                    self.not_empty.wait()
+                    if self.is_shutdown and not self._qsize():
+                        raise ShutDown
+            elif timeout < 0:
+                raise ValueError("'timeout' must be a non-negative number")
+            else:
+                endtime = time() + timeout
+                while not self._qsize():
+                    remaining = endtime - time()
+                    if remaining <= 0.0:
+                        raise queue.Empty
+                    self.not_empty.wait(remaining)
+                    if self.is_shutdown and not self._qsize():
+                        raise ShutDown
+            item = self._get()
+            self.not_full.notify()
+            return item
+
+    def shutdown(self, immediate=False):
+        with self.mutex:
+            self.is_shutdown = True
+            if immediate:
+                while self._qsize():
+                    self._get()
+                    if self.unfinished_tasks > 0:
+                        self.unfinished_tasks -= 1
+                self.all_tasks_done.notify_all()
+            self.not_empty.notify_all()
+            self.not_full.notify_all()
+)";
 } // namespace
+
+const QueueTypes &queueTypes()
+{
+    PYBIND11_CONSTINIT static py::gil_safe_call_once_and_store<QueueTypes> storage;
+
+    return storage
+        .call_once_and_store_result(
+            []
+            {
+                py::object mod = py::module_::import("queue");
+
+                if (!py::hasattr(mod, "ShutDown"))
+                {
+                    mod = py::module_::import("types").attr("ModuleType")(
+                        "mesytec_mcpd._queue_backport");
+                    py::exec(QueueBackportSource, mod.attr("__dict__"));
+                }
+
+                return QueueTypes{mod.attr("Queue"), mod.attr("ShutDown")};
+            })
+        .get_stored();
+}
 
 PyQueueTap::PyQueueTap(py::handle queue, bool blocking)
     : queue_(queue)
@@ -46,11 +153,9 @@ void PyQueueTap::consume(const ReceivedPacket &rp)
     }
     catch (py::error_already_set &e)
     {
-        auto queueModule = py::module_::import("queue");
-
-        if (e.matches(queueModule.attr("ShutDown")))
+        if (e.matches(queueTypes().shutDown))
             shutDown_ = true;
-        else if (e.matches(queueModule.attr("Full")))
+        else if (e.matches(py::module_::import("queue").attr("Full")))
             ++dropped_;
         else
             throw;
@@ -65,14 +170,22 @@ void PyQueueTap::finished()
 
 WorkerBase::WorkerBase(size_t queueSize)
     : queueSize_(queueSize)
-    , queue_(py::module_::import("queue").attr("Queue")(queueSize))
+    , queue_(queueTypes().queue(queueSize))
 {
 }
 
 WorkerBase::~WorkerBase()
 {
     ReleaseGilIfHeld release;
-    stop(true);
+
+    try
+    {
+        stop(true);
+    }
+    catch (const std::exception &e)
+    {
+        spdlog::error("{}: exception from stop(): {}", PRETTY_FUNCTION, e.what());
+    }
 }
 
 bool WorkerBase::start()
@@ -91,7 +204,7 @@ bool WorkerBase::start()
     {
         py::gil_scoped_acquire gil;
         if (queueUsed_)
-            queue_ = py::module_::import("queue").attr("Queue")(queueSize_);
+            queue_ = queueTypes().queue(queueSize_);
         queueUsed_ = true;
     }
 

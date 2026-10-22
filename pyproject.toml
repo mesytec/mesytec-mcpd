@@ -8,7 +8,7 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "mesytec_mcpd"
 dynamic = ["version"]
-requires-python = ">= 3.12"
+requires-python = ">= 3.10"
 authors = [ { name = "Florian Lüke", email = "f.lueke@mesytec.com" } ]
 description = "Driver library and tools for the mesytec PSD+ system"
 readme = "README.md"
@@ -23,7 +23,10 @@ classifiers = [
   "Topic :: Software Development",
   "Topic :: Software Development :: Libraries",
   "Topic :: Software Development :: Libraries :: Python Modules",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
 ]
 dependencies = ["numpy", "click"]
 
@@ -62,7 +65,7 @@ repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --no-dll mesytec
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py310"
 
 # https://docs.astral.sh/ruff/rules/, https://docs.astral.sh/ruff/settings/#lint_select
 [tool.ruff.lint]
